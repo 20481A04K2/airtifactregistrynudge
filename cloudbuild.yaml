@@ -93,7 +93,6 @@ steps:
        chmod +x $$STARTUP_SCRIPT_PATH
 
 
-
   # Step 5: Create Instance Template with startup script
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Instance Template'
