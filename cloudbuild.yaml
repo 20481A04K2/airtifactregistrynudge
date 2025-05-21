@@ -38,24 +38,25 @@ steps:
           --location=$$LOCATION \
           --description="Generic repo for .nupkg files" || echo "Repo probably exists."
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: 'Upload nupkg'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      source /workspace/version.env
-      REPO_NAME="generic-nupkg-repo"
-      LOCATION="us-central1"
-      FILE="python-app-$$VERSION_TAG.nupkg"
-      
-      gcloud artifacts generic upload $$FILE \
-        --project="onyx-antler-459216-j6" \
-        --location="$$LOCATION" \
-        --repository="$$REPO_NAME" \
-        --package="python-app" \
-        --version="$$VERSION_TAG" \
-        --quiet
+  # Step 3: Upload nupkg
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Upload nupkg'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        source /workspace/version.env
+        REPO_NAME="generic-nupkg-repo"
+        LOCATION="us-central1"
+        FILE="python-app-$$VERSION_TAG.nupkg"
+
+        gcloud artifacts generic upload $$FILE \
+          --project="onyx-antler-459216-j6" \
+          --location=$$LOCATION \
+          --repository=$$REPO_NAME \
+          --package="python-app" \
+          --version=$$VERSION_TAG \
+          --quiet
 
 
   # Step 4: Create startup.sh with escaped $$$$ and valid YAML
