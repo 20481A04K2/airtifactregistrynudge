@@ -46,12 +46,13 @@ steps:
       - "-c"
       - |
         source /workspace/version.env
-        gcloud artifacts packages upload "source-package" \
-          --repository="generic-nupkg-repo" \
-          --location="us-central1" \
+        gcloud artifacts generic upload \
           --project="onyx-antler-459216-j6" \
-          --source="python-app-$$VERSION_TAG.nupkg" \
-          --version="$$VERSION_TAG"
+          --location="us-central1" \
+          --repository="generic-nupkg-repo" \
+          --package="source-package" \
+          --version="$$VERSION_TAG"\
+          --source="python-app-$$VERSION_TAG.nupkg" 
 
 
 
