@@ -10,9 +10,9 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Package Multiple Flask App Instances
+  # Step 1: Create separate .nupkg files with specific content
   - name: 'python:3.10-slim'
-    id: 'Package Multiple Flask Apps'
+    id: 'Create Distinct .nupkg Files'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -20,34 +20,34 @@ steps:
         apt-get update && apt-get install -y zip
         source /workspace/version.env
 
-        for i in 1 2 3 4; do
-          DIR="package_$$i"
-          mkdir -p $$DIR
+        # app.nupkg
+        mkdir -p app_dir
+        echo "from flask import Flask" > app_dir/app.py
+        echo "app = Flask(__name__)" >> app_dir/app.py
+        echo "@app.route('/')" >> app_dir/app.py
+        echo "def hello():" >> app_dir/app.py
+        echo "    return 'Hello from app'" >> app_dir/app.py
+        echo "if __name__ == '__main__':" >> app_dir/app.py
+        echo "    app.run(host='0.0.0.0', port=8080)" >> app_dir/app.py
+        zip -r app.nupkg app_dir
 
-          echo "from flask import Flask" > $$DIR/app.py
-          echo "import utils" >> $$DIR/app.py
-          echo "app = Flask(__name__)" >> $$DIR/app.py
-          echo "" >> $$DIR/app.py
-          echo "@app.route('/')" >> $$DIR/app.py
-          echo "def hello():" >> $$DIR/app.py
-          echo "    return f'Hello from version $${VERSION_TAG} - Instance $$i - ' + utils.greet()" >> $$DIR/app.py
-          echo "" >> $$DIR/app.py
-          echo "if __name__ == '__main__':" >> $$DIR/app.py
-          echo "    app.run(host='0.0.0.0', port=8080)" >> $$DIR/app.py
+        # config.nupkg
+        mkdir -p config_dir
+        echo "environment: production" > config_dir/config.yaml
+        echo "version: $${VERSION_TAG}" >> config_dir/config.yaml
+        zip -r config.nupkg config_dir
 
-          echo "def greet():" > $$DIR/utils.py
-          echo "    return 'Greetings from utils!'" >> $$DIR/utils.py
+        # utils.nupkg
+        mkdir -p utils_dir
+        echo "def greet():" > utils_dir/utils.py
+        echo "    return 'Greetings from utils!'" >> utils_dir/utils.py
+        zip -r utils.nupkg utils_dir
 
-          echo "environment: production" > $$DIR/config.yaml
-          echo "version: $${VERSION_TAG}" >> $$DIR/config.yaml
-
-          echo "# Flask App Instance $$i" > $$DIR/README.md
-          echo "This is version $${VERSION_TAG} of instance $$i." >> $$DIR/README.md
-
-          touch $$DIR/__init__.py
-
-          zip -r python-app-$${VERSION_TAG}-$$i.nupkg $$DIR
-        done
+        # readme.nupkg
+        mkdir -p readme_dir
+        echo "# Flask App Package" > readme_dir/README.md
+        echo "This is version $${VERSION_TAG}." >> readme_dir/README.md
+        zip -r readme.nupkg readme_dir
 
   # Step 2: Ensure Artifact Registry Exists
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -62,27 +62,25 @@ steps:
             --project=onyx-antler-459216-j6
         fi
 
-  # Step 3: Upload multiple .nupkg files under different package names but SAME version
-  - name: "gcr.io/cloud-builders/gcloud"
-    id: "Upload Multiple .nupkg Files"
-    entrypoint: "bash"
+  # Step 3: Upload .nupkg files to Artifact Registry
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Upload to Artifact Registry'
+    entrypoint: 'bash'
     args:
-      - "-c"
+      - '-c'
       - |
         source /workspace/version.env
 
-        echo "Uploading .nupkg files under separate packages but with version $$VERSION_TAG"
-
-        declare -A PACKAGES
-        PACKAGES["app"]="python-app-$$VERSION_TAG-1.nupkg"
-        PACKAGES["config"]="python-app-$$VERSION_TAG-2.nupkg"
-        PACKAGES["utils"]="python-app-$$VERSION_TAG-3.nupkg"
-        PACKAGES["readme"]="python-app-$$VERSION_TAG-4.nupkg"
+        declare -A PACKAGES=(
+          ["app"]="app.nupkg"
+          ["config"]="config.nupkg"
+          ["utils"]="utils.nupkg"
+          ["readme"]="readme.nupkg"
+        )
 
         for pkg in "${!PACKAGES[@]}"; do
           FILE="${PACKAGES[$pkg]}"
-          echo "Uploading $$FILE to package '$$pkg' version $$VERSION_TAG"
-
+          echo "Uploading $$FILE to package '$$pkg' with version $$VERSION_TAG"
           gcloud artifacts generic upload \
             --project="onyx-antler-459216-j6" \
             --location="us-central1" \
