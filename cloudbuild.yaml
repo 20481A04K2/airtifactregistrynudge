@@ -38,7 +38,7 @@ steps:
         fi
 
 
-  # Step 3: Upload nupkg
+  # Step 3: Upload .nupkg to Artifact Registry
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Upload nupkg'
     entrypoint: 'bash'
@@ -46,17 +46,13 @@ steps:
       - '-c'
       - |
         source /workspace/version.env
-        REPO_NAME="generic-nupkg-repo"
-        LOCATION="us-central1"
-        FILE="python-app-$$VERSION_TAG.nupkg"
+        gcloud artifacts packages upload source-package \
+          --repository=generic-nupkg-repo \
+          --location=us-central1 \
+          --project=onyx-antler-459216-j6 \
+          --source=python-app-$$VERSION_TAG.nupkg \
+          --version=$$VERSION_TAG
 
-        gcloud artifacts generic upload $$FILE \
-          --project="onyx-antler-459216-j6" \
-          --location=$$LOCATION \
-          --repository=$$REPO_NAME \
-          --package="python-app" \
-          --version=$$VERSION_TAG \
-          --quiet
 
 
   # Step 4: Create startup.sh with escaped $$$$ and valid YAML
