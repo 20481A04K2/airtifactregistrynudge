@@ -39,19 +39,19 @@ steps:
 
 
   # Step 3: Upload .nupkg to Artifact Registry
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'Upload nupkg'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "Upload nupkg"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         source /workspace/version.env
-        gcloud artifacts packages upload source-package \
-          --repository=generic-nupkg-repo \
-          --location=us-central1 \
-          --project=onyx-antler-459216-j6 \
-          --source=python-app-$$VERSION_TAG.nupkg \
-          --version=$$VERSION_TAG
+        gcloud artifacts packages upload "source-package" \
+          --repository="generic-nupkg-repo" \
+          --location="us-central1" \
+          --project="onyx-antler-459216-j6" \
+          --source="python-app-$$VERSION_TAG.nupkg" \
+          --version="$$VERSION_TAG"
 
 
 
