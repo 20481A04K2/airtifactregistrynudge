@@ -77,10 +77,10 @@ steps:
            -o /tmp/$$FILE_NAME \\
           "$$BUCKET_URL/$$FILE_NAME?alt=media"
 
-      unzip -o /tmp/$$FILE_NAME -d /opt/python-app
+       unzip -o /tmp/$$FILE_NAME -d /opt/python-app
 
-      python3 /opt/python-app/package/app.py
-      EOF
+       python3 /opt/python-app/package/app.py
+       EOF
 
       chmod +x $$STARTUP_SCRIPT_PATH
 
