@@ -24,19 +24,19 @@ steps:
         touch package/__init__.py
         zip -r python-app-$$VERSION_TAG.nupkg package
 
-  # Step 2: Create Artifact Registry repo
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'Create Generic Repo'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        REPO_NAME="generic-nupkg-repo"
-        LOCATION="us-central1"
-        gcloud artifacts repositories create $$REPO_NAME \
+# Step 1: Check/create Artifact Registry repo
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      if ! gcloud artifacts repositories describe generic-nupkg-repo --location=us-central1 --project=onyx-antler-459216-j6; then
+        gcloud artifacts repositories create generic-nupkg-repo \
           --repository-format=generic \
-          --location=$$LOCATION \
-          --description="Generic repo for .nupkg files" || echo "Repo probably exists."
+          --location=us-central1 \
+          --project=onyx-antler-459216-j6
+      fi
+
 
   # Step 3: Upload nupkg
   - name: 'gcr.io/cloud-builders/gcloud'
