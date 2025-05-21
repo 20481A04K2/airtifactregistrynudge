@@ -65,24 +65,24 @@ steps:
         STARTUP_SCRIPT_PATH="/workspace/startup-$$VERSION_TAG.sh"
 
         cat <<EOF > $$STARTUP_SCRIPT_PATH
-#!/bin/bash
-echo "Starting startup script for $$VERSION_TAG..."
+        #!/bin/bash
+        echo "Starting startup script for $$VERSION_TAG..."
 
-apt-get update -y
-apt-get install -y unzip python3 python3-pip curl jq
+        apt-get update -y
+        apt-get install -y unzip python3 python3-pip curl jq
 
-TOKEN=\$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
+        TOKEN=\$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
 
-curl -H "Authorization: Bearer \$TOKEN" \\
-  -o /tmp/$$FILE_NAME \\
-  "$$BUCKET_URL/$$FILE_NAME?alt=media"
+        curl -H "Authorization: Bearer \$TOKEN" \\
+           -o /tmp/$$FILE_NAME \\
+          "$$BUCKET_URL/$$FILE_NAME?alt=media"
 
-unzip -o /tmp/$$FILE_NAME -d /opt/python-app
+      unzip -o /tmp/$$FILE_NAME -d /opt/python-app
 
-python3 /opt/python-app/package/app.py
-EOF
+      python3 /opt/python-app/package/app.py
+      EOF
 
-        chmod +x $$STARTUP_SCRIPT_PATH
+      chmod +x $$STARTUP_SCRIPT_PATH
 
   # Step 5: Upload startup script to GCS bucket
   - name: 'gcr.io/cloud-builders/gsutil'
