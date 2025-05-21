@@ -50,7 +50,8 @@ steps:
         FILE="python-app-$VERSION_TAG.nupkg"
         gcloud artifacts files upload $FILE --repository=$REPO_NAME --location=$LOCATION --quiet
 
-  # Step 4: Generate startup script to download/unzip/run python app from AR
+  # Step 4: Dynamically create startup.sh (inline Ubuntu) with double-escaped $$ variables
+  # This startup script downloads the .nupkg from Artifact Registry, unzips, and runs the python app
   - name: 'ubuntu'
     id: 'Create startup.sh'
     entrypoint: 'bash'
@@ -60,41 +61,25 @@ steps:
         source /workspace/version.env
         REPO_NAME="generic-nupkg-repo"
         LOCATION="us-central1"
-        BUCKET_URL="https://$LOCATION-artifactregistry.googleapis.com/v1/projects/$(gcloud config get-value project)/locations/$LOCATION/repositories/$REPO_NAME/files"
-        FILE_NAME="python-app-$VERSION_TAG.nupkg"
-        STARTUP_SCRIPT_PATH="/workspace/startup-$VERSION_TAG.sh"
+        PROJECT_ID=$$(gcloud config get-value project)
+        FILE_NAME="python-app-$${VERSION_TAG}.nupkg"
+        STARTUP_SCRIPT_PATH="/workspace/startup-$${VERSION_TAG}.sh"
+        AR_BASE_URL="https://$${LOCATION}-artifactregistry.googleapis.com/v1/projects/$${PROJECT_ID}/locations/$${LOCATION}/repositories/$${REPO_NAME}/files"
 
-        cat <<EOF > $STARTUP_SCRIPT_PATH
-#!/bin/bash
-echo "Starting startup script for $VERSION_TAG..."
+        echo "#!/bin/bash" > $$STARTUP_SCRIPT_PATH
+        echo "echo \"Startup script running for version $${VERSION_TAG}\"" >> $$STARTUP_SCRIPT_PATH
+        echo "apt-get update -y" >> $$STARTUP_SCRIPT_PATH
+        echo "apt-get install -y unzip python3 python3-pip curl jq" >> $$STARTUP_SCRIPT_PATH
+        echo "TOKEN=\$$(curl -s -H \"Metadata-Flavor: Google\" \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
+        echo "curl -H \"Authorization: Bearer \$TOKEN\" \\" >> $$STARTUP_SCRIPT_PATH
+        echo "  -o /tmp/$${FILE_NAME} \\" >> $$STARTUP_SCRIPT_PATH
+        echo "  \"$${AR_BASE_URL}/$${FILE_NAME}?alt=media\"" >> $$STARTUP_SCRIPT_PATH
+        echo "unzip -o /tmp/$${FILE_NAME} -d /opt/python-app" >> $$STARTUP_SCRIPT_PATH
+        echo "python3 /opt/python-app/package/app.py" >> $$STARTUP_SCRIPT_PATH
 
-apt-get update -y
-apt-get install -y unzip python3 python3-pip curl jq
+        chmod +x $$STARTUP_SCRIPT_PATH
 
-TOKEN=\$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
-
-curl -H "Authorization: Bearer \$TOKEN" \\
-  -o /tmp/$FILE_NAME \\
-  "$BUCKET_URL/$FILE_NAME?alt=media"
-
-unzip -o /tmp/$FILE_NAME -d /opt/python-app
-
-python3 /opt/python-app/package/app.py
-EOF
-
-        chmod +x $STARTUP_SCRIPT_PATH
-
-  # Step 5: Upload startup script to GCS bucket
-  - name: 'gcr.io/cloud-builders/gsutil'
-    id: 'Upload startup.sh to GCS'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        source /workspace/version.env
-        gsutil cp /workspace/startup-$VERSION_TAG.sh gs://vamsi-artifact-bucket/scripts/startup-$VERSION_TAG.sh
-
-  # Step 6: Create Instance Template with startup-script-url pointing to GCS script
+  # Step 5: Create Instance Template with startup-script from local startup.sh (no GCS)
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Instance Template'
     entrypoint: 'bash'
@@ -103,16 +88,16 @@ EOF
       - |
         source /workspace/version.env
         VERSION=$VERSION_TAG
-        STARTUP_SCRIPT_URL=gs://vamsi-artifact-bucket/scripts/startup-$VERSION.sh
+        STARTUP_SCRIPT_FILE="/workspace/startup-$VERSION.sh"
 
         gcloud compute instance-templates create vamsi-template-$VERSION \
           --machine-type=e2-medium \
           --image-family=ubuntu-2204-lts \
           --image-project=ubuntu-os-cloud \
           --tags=http-server,https-server \
-          --metadata=startup-script-url=$STARTUP_SCRIPT_URL
+          --metadata-from-file startup-script=$STARTUP_SCRIPT_FILE
 
-  # Step 7: Create or update MIG with new instance template
+  # Step 6: Create or update MIG with new instance template
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create or Update MIG'
     entrypoint: 'bash'
