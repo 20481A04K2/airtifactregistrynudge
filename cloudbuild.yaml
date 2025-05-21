@@ -10,7 +10,7 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
- # Step 1: Package Python script (install zip first)
+  # Step 1: Package Python script (install zip first)
   - name: 'python:3.10-slim'
     id: 'Package Python Script'
     entrypoint: 'bash'
@@ -23,19 +23,19 @@ steps:
         echo 'print("Hello from version '$$VERSION_TAG'")' > package/app.py
         touch package/__init__.py
         zip -r python-app-$$VERSION_TAG.nupkg package
- # Step 2: Check/create Artifact Registry repo
- - name: 'gcr.io/cloud-builders/gcloud'
-   entrypoint: 'bash'
-   args:
-     - '-c'
-     - |
-       if ! gcloud artifacts repositories describe generic-nupkg-repo --location=us-central1 --project=onyx-antler-459216-j6; then
-         gcloud artifacts repositories create generic-nupkg-repo \
-           --repository-format=generic \
-           --location=us-central1 \
-           --project=onyx-antler-459216-j6
-       fi
-  
+
+  # Step 2: Check/create Artifact Registry repo
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if ! gcloud artifacts repositories describe generic-nupkg-repo --location=us-central1 --project=onyx-antler-459216-j6; then
+          gcloud artifacts repositories create generic-nupkg-repo \
+            --repository-format=generic \
+            --location=us-central1 \
+            --project=onyx-antler-459216-j6
+        fi
 
 
   # Step 3: Upload nupkg
