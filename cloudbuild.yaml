@@ -6,53 +6,50 @@ steps:
     args:
       - '-c'
       - |
-        VERSION_TAG="v-$$(date +%Y%m%d-%H%M%S)"
+        VERSION_TAG="v-$(date +%Y%m%d-%H%M%S)"
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Package Flask App (YAML-safe version with multiple files)
+  # Step 1: Package Multiple Flask App Instances
   - name: 'python:3.10-slim'
-    id: 'Package Flask App'
+    id: 'Package Multiple Flask Apps'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
         apt-get update && apt-get install -y zip
         source /workspace/version.env
-        mkdir -p package
 
-        # app.py
-        echo "from flask import Flask" > package/app.py
-        echo "import utils" >> package/app.py
-        echo "app = Flask(__name__)" >> package/app.py
-        echo "" >> package/app.py
-        echo "@app.route('/')" >> package/app.py
-        echo "def hello():" >> package/app.py
-        echo "    return f'Hello from version $${VERSION_TAG} - ' + utils.greet()" >> package/app.py
-        echo "" >> package/app.py
-        echo "if __name__ == '__main__':" >> package/app.py
-        echo "    app.run(host='0.0.0.0', port=8080)" >> package/app.py
+        for i in 1 2 3 4; do
+          DIR="package_$$i"
+          mkdir -p $$DIR
 
-        # utils.py
-        echo "def greet():" > package/utils.py
-        echo "    return 'Greetings from utils!'" >> package/utils.py
+          echo "from flask import Flask" > $$DIR/app.py
+          echo "import utils" >> $$DIR/app.py
+          echo "app = Flask(__name__)" >> $$DIR/app.py
+          echo "" >> $$DIR/app.py
+          echo "@app.route('/')" >> $$DIR/app.py
+          echo "def hello():" >> $$DIR/app.py
+          echo "    return f'Hello from version $${VERSION_TAG} - Instance $$i - ' + utils.greet()" >> $$DIR/app.py
+          echo "" >> $$DIR/app.py
+          echo "if __name__ == '__main__':" >> $$DIR/app.py
+          echo "    app.run(host='0.0.0.0', port=8080)" >> $$DIR/app.py
 
-        # config.yaml
-        echo "environment: production" > package/config.yaml
-        echo "version: $${VERSION_TAG}" >> package/config.yaml
+          echo "def greet():" > $$DIR/utils.py
+          echo "    return 'Greetings from utils!'" >> $$DIR/utils.py
 
-        # README.md
-        echo "# Sample Flask App" > package/README.md
-        echo "This is version $${VERSION_TAG} of the app." >> package/README.md
+          echo "environment: production" > $$DIR/config.yaml
+          echo "version: $${VERSION_TAG}" >> $$DIR/config.yaml
 
-        # __init__.py
-        touch package/__init__.py
+          echo "# Flask App Instance $$i" > $$DIR/README.md
+          echo "This is version $${VERSION_TAG} of instance $$i." >> $$DIR/README.md
 
-        # Create the .nupkg ZIP archive
-        zip -r python-app-$${VERSION_TAG}.nupkg package
+          touch $$DIR/__init__.py
 
+          zip -r python-app-$${VERSION_TAG}-$$i.nupkg $$DIR
+        done
 
-  # Step 2: Check/create Artifact Registry repo
+  # Step 2: Ensure Artifact Registry Exists
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
@@ -65,31 +62,29 @@ steps:
             --project=onyx-antler-459216-j6
         fi
 
-  # Step 3: Upload multiple .nupkg files with same version to Artifact Registry
+  # Step 3: Upload All .nupkg Files to Artifact Registry
   - name: "gcr.io/cloud-builders/gcloud"
-    id: "Upload multiple nupkg"
+    id: "Upload Multiple .nupkg Files"
     entrypoint: "bash"
     args:
       - "-c"
       - |
         source /workspace/version.env
 
-        # List of .nupkg files to upload
-        FILES=$(ls *.nupkg)
+        echo "Uploading all .nupkg files with version tag: $$VERSION_TAG"
 
-        for FILE in $$FILES; do
+        for FILE in python-app-$${VERSION_TAG}-*.nupkg; do
           echo "Uploading $$FILE to Artifact Registry..."
           gcloud artifacts generic upload \
             --project="onyx-antler-459216-j6" \
             --location="us-central1" \
             --repository="generic-nupkg-repo" \
             --package="source-package" \
-            --version="$$VERSION_TAG" \
+            --version="$${VERSION_TAG}" \
             --source="$$FILE"
         done
 
-
-  # Step 4: Create startup.sh with Flask setup and app run
+  # Step 4: Create startup.sh to install Flask and run app from downloaded .nupkg
   - name: 'ubuntu'
     id: 'Create startup.sh'
     entrypoint: 'bash'
@@ -99,10 +94,10 @@ steps:
         source /workspace/version.env
         REPO_NAME="generic-nupkg-repo"
         LOCATION="us-central1"
-        PROJECT_ID=$$(gcloud config get-value project)
-        FILE_NAME="python-app-$$VERSION_TAG.nupkg"
-        STARTUP_SCRIPT_PATH="/workspace/startup-$$VERSION_TAG.sh"
-        AR_BASE_URL="https://$$LOCATION-artifactregistry.googleapis.com/v1/projects/$$PROJECT_ID/locations/$$LOCATION/repositories/$$REPO_NAME/files"
+        PROJECT_ID=$(gcloud config get-value project)
+        FILE_NAME="python-app-$${VERSION_TAG}-1.nupkg"
+        STARTUP_SCRIPT_PATH="/workspace/startup-$${VERSION_TAG}.sh"
+        AR_BASE_URL="https://$${LOCATION}-artifactregistry.googleapis.com/v1/projects/$${PROJECT_ID}/locations/$${LOCATION}/repositories/$${REPO_NAME}/files"
 
         echo "#!/bin/bash" > $$STARTUP_SCRIPT_PATH
         echo "echo \"Startup script running for version $$VERSION_TAG\"" >> $$STARTUP_SCRIPT_PATH
@@ -110,18 +105,18 @@ steps:
         echo "apt-get install -y unzip python3 python3-pip curl jq" >> $$STARTUP_SCRIPT_PATH
         echo "pip3 install flask" >> $$STARTUP_SCRIPT_PATH
 
-        echo "TOKEN=\$$(curl -s -H \\\"Metadata-Flavor: Google\\\" \\\"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\\\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
-        echo "curl -H \\\"Authorization: Bearer $$$$TOKEN\\\" \\" >> $$STARTUP_SCRIPT_PATH
+        echo "TOKEN=\$(curl -s -H \"Metadata-Flavor: Google\" \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
+        echo "curl -H \"Authorization: Bearer \$\$TOKEN\" \\" >> $$STARTUP_SCRIPT_PATH
         echo "  -o /tmp/$$FILE_NAME \\" >> $$STARTUP_SCRIPT_PATH
-        echo "  \\\"$$AR_BASE_URL/$$FILE_NAME?alt=media\\\"" >> $$STARTUP_SCRIPT_PATH
+        echo "  \"$${AR_BASE_URL}/$$FILE_NAME?alt=media\"" >> $$STARTUP_SCRIPT_PATH
 
         echo "mkdir -p /opt/python-app" >> $$STARTUP_SCRIPT_PATH
         echo "unzip -o /tmp/$$FILE_NAME -d /opt/python-app" >> $$STARTUP_SCRIPT_PATH
-        echo "nohup python3 /opt/python-app/package/app.py > /var/log/app.log 2>&1 &" >> $$STARTUP_SCRIPT_PATH
+        echo "nohup python3 /opt/python-app/package_1/app.py > /var/log/app.log 2>&1 &" >> $$STARTUP_SCRIPT_PATH
 
         chmod +x $$STARTUP_SCRIPT_PATH
 
-  # Step 5: Create Instance Template with startup script
+  # Step 5: Create Instance Template with Startup Script
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Instance Template'
     entrypoint: 'bash'
@@ -169,7 +164,6 @@ steps:
           echo "Triggering rolling restart..."
           gcloud compute instance-groups managed rolling-action restart $$MIG_NAME \
             --zone=$$ZONE
-        fi
 
 options:
   logging: CLOUD_LOGGING_ONLY
