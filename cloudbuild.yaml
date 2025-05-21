@@ -47,7 +47,7 @@ steps:
 
   # Step 3: Upload .nupkg to Artifact Registry
   - name: "gcr.io/cloud-builders/gcloud"
-    id: "Upload nupkg"
+   id: "Upload nupkg"
     entrypoint: "bash"
     args:
       - "-c"
