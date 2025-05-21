@@ -6,9 +6,9 @@ steps:
     args:
       - '-c'
       - |
-        VERSION_TAG="v-$(date +%Y%m%d-%H%M%S)"
-        echo "VERSION_TAG=$VERSION_TAG" > /workspace/version.env
-        echo "Generated version: $VERSION_TAG"
+        VERSION_TAG="v-$$(date +%Y%m%d-%H%M%S)"
+        echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
+        echo "Generated version: $$VERSION_TAG"
 
   # Step 1: Package Python script as .nupkg (zip) with version tag
   - name: 'ubuntu'
@@ -19,9 +19,9 @@ steps:
       - |
         source /workspace/version.env
         mkdir -p package
-        echo 'print("Hello from version '$VERSION_TAG'")' > package/app.py
+        echo 'print("Hello from version '$$VERSION_TAG'")' > package/app.py
         touch package/__init__.py
-        zip -r python-app-$VERSION_TAG.nupkg package
+        zip -r python-app-$$VERSION_TAG.nupkg package
 
   # Step 2: Create Generic Artifact Registry repo if not exist (idempotent)
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -32,9 +32,9 @@ steps:
       - |
         REPO_NAME="generic-nupkg-repo"
         LOCATION="us-central1"
-        gcloud artifacts repositories create $REPO_NAME \
+        gcloud artifacts repositories create $$REPO_NAME \
           --repository-format=generic \
-          --location=$LOCATION \
+          --location=$$LOCATION \
           --description="Generic repo for .nupkg files" || echo "Repo probably exists."
 
   # Step 3: Upload .nupkg to Artifact Registry with version tag
@@ -47,11 +47,10 @@ steps:
         source /workspace/version.env
         REPO_NAME="generic-nupkg-repo"
         LOCATION="us-central1"
-        FILE="python-app-$VERSION_TAG.nupkg"
-        gcloud artifacts files upload $FILE --repository=$REPO_NAME --location=$LOCATION --quiet
+        FILE="python-app-$$VERSION_TAG.nupkg"
+        gcloud artifacts files upload $$FILE --repository=$$REPO_NAME --location=$$LOCATION --quiet
 
-  # Step 4: Dynamically create startup.sh (inline Ubuntu) with double-escaped $$ variables
-  # This startup script downloads the .nupkg from Artifact Registry, unzips, and runs the python app
+  # Step 4: Dynamically create startup.sh with double-escaped $$ variables
   - name: 'ubuntu'
     id: 'Create startup.sh'
     entrypoint: 'bash'
@@ -62,24 +61,24 @@ steps:
         REPO_NAME="generic-nupkg-repo"
         LOCATION="us-central1"
         PROJECT_ID=$$(gcloud config get-value project)
-        FILE_NAME="python-app-$${VERSION_TAG}.nupkg"
-        STARTUP_SCRIPT_PATH="/workspace/startup-$${VERSION_TAG}.sh"
-        AR_BASE_URL="https://$${LOCATION}-artifactregistry.googleapis.com/v1/projects/$${PROJECT_ID}/locations/$${LOCATION}/repositories/$${REPO_NAME}/files"
+        FILE_NAME="python-app-$$VERSION_TAG.nupkg"
+        STARTUP_SCRIPT_PATH="/workspace/startup-$$VERSION_TAG.sh"
+        AR_BASE_URL="https://$$LOCATION-artifactregistry.googleapis.com/v1/projects/$$PROJECT_ID/locations/$$LOCATION/repositories/$$REPO_NAME/files"
 
         echo "#!/bin/bash" > $$STARTUP_SCRIPT_PATH
-        echo "echo \"Startup script running for version $${VERSION_TAG}\"" >> $$STARTUP_SCRIPT_PATH
+        echo "echo \"Startup script running for version $$VERSION_TAG\"" >> $$STARTUP_SCRIPT_PATH
         echo "apt-get update -y" >> $$STARTUP_SCRIPT_PATH
         echo "apt-get install -y unzip python3 python3-pip curl jq" >> $$STARTUP_SCRIPT_PATH
         echo "TOKEN=\$$(curl -s -H \"Metadata-Flavor: Google\" \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
         echo "curl -H \"Authorization: Bearer \$TOKEN\" \\" >> $$STARTUP_SCRIPT_PATH
-        echo "  -o /tmp/$${FILE_NAME} \\" >> $$STARTUP_SCRIPT_PATH
-        echo "  \"$${AR_BASE_URL}/$${FILE_NAME}?alt=media\"" >> $$STARTUP_SCRIPT_PATH
-        echo "unzip -o /tmp/$${FILE_NAME} -d /opt/python-app" >> $$STARTUP_SCRIPT_PATH
+        echo "  -o /tmp/$$FILE_NAME \\" >> $$STARTUP_SCRIPT_PATH
+        echo "  \"$$AR_BASE_URL/$$FILE_NAME?alt=media\"" >> $$STARTUP_SCRIPT_PATH
+        echo "unzip -o /tmp/$$FILE_NAME -d /opt/python-app" >> $$STARTUP_SCRIPT_PATH
         echo "python3 /opt/python-app/package/app.py" >> $$STARTUP_SCRIPT_PATH
 
         chmod +x $$STARTUP_SCRIPT_PATH
 
-  # Step 5: Create Instance Template with startup-script from local startup.sh (no GCS)
+  # Step 5: Create Instance Template with startup-script from local file (no GCS)
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Instance Template'
     entrypoint: 'bash'
@@ -87,15 +86,15 @@ steps:
       - '-c'
       - |
         source /workspace/version.env
-        VERSION=$VERSION_TAG
-        STARTUP_SCRIPT_FILE="/workspace/startup-$VERSION.sh"
+        VERSION=$$VERSION_TAG
+        STARTUP_SCRIPT_FILE="/workspace/startup-$$VERSION.sh"
 
-        gcloud compute instance-templates create vamsi-template-$VERSION \
+        gcloud compute instance-templates create vamsi-template-$$VERSION \
           --machine-type=e2-medium \
           --image-family=ubuntu-2204-lts \
           --image-project=ubuntu-os-cloud \
           --tags=http-server,https-server \
-          --metadata-from-file startup-script=$STARTUP_SCRIPT_FILE
+          --metadata-from-file startup-script=$$STARTUP_SCRIPT_FILE
 
   # Step 6: Create or update MIG with new instance template
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -106,25 +105,25 @@ steps:
       - |
         source /workspace/version.env
         MIG_NAME="vamsi-mig"
-        TEMPLATE_NAME="vamsi-template-$VERSION_TAG"
+        TEMPLATE_NAME="vamsi-template-$$VERSION_TAG"
         ZONE="us-central1-a"
 
-        if ! gcloud compute instance-groups managed describe $MIG_NAME --zone=$ZONE > /dev/null 2>&1; then
-          echo "Creating new MIG with template $TEMPLATE_NAME"
-          gcloud compute instance-groups managed create $MIG_NAME \
+        if ! gcloud compute instance-groups managed describe $$MIG_NAME --zone=$$ZONE > /dev/null 2>&1; then
+          echo "Creating new MIG with template $$TEMPLATE_NAME"
+          gcloud compute instance-groups managed create $$MIG_NAME \
             --base-instance-name=vamsi-instance \
-            --template=$TEMPLATE_NAME \
+            --template=$$TEMPLATE_NAME \
             --size=1 \
-            --zone=$ZONE
+            --zone=$$ZONE
         else
-          echo "MIG exists. Updating template to $TEMPLATE_NAME"
-          gcloud compute instance-groups managed set-instance-template $MIG_NAME \
-            --template=$TEMPLATE_NAME \
-            --zone=$ZONE
+          echo "MIG exists. Updating template to $$TEMPLATE_NAME"
+          gcloud compute instance-groups managed set-instance-template $$MIG_NAME \
+            --template=$$TEMPLATE_NAME \
+            --zone=$$ZONE
 
           echo "Triggering rolling restart..."
-          gcloud compute instance-groups managed rolling-action restart $MIG_NAME \
-            --zone=$ZONE
+          gcloud compute instance-groups managed rolling-action restart $$MIG_NAME \
+            --zone=$$ZONE
         fi
 
 options:
