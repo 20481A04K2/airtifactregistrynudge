@@ -62,7 +62,7 @@ steps:
             --project=onyx-antler-459216-j6
         fi
 
-  # Step 3: Upload multiple .nupkg files to the SAME package and SAME version, but different file names
+  # Step 3: Upload multiple .nupkg files under different package names but SAME version
   - name: "gcr.io/cloud-builders/gcloud"
     id: "Upload Multiple .nupkg Files"
     entrypoint: "bash"
@@ -71,28 +71,25 @@ steps:
       - |
         source /workspace/version.env
 
-        echo "Uploading .nupkg files under single package 'source-package' and version $$VERSION_TAG"
+        echo "Uploading .nupkg files under separate packages but with version $$VERSION_TAG"
 
-        PACKAGE_NAME="source-package"
+        declare -A PACKAGES
+        PACKAGES["app"]="python-app-$$VERSION_TAG-1.nupkg"
+        PACKAGES["config"]="python-app-$$VERSION_TAG-2.nupkg"
+        PACKAGES["utils"]="python-app-$$VERSION_TAG-3.nupkg"
+        PACKAGES["readme"]="python-app-$$VERSION_TAG-4.nupkg"
 
-        declare -A FILES
-        FILES["app"]="python-app-$$VERSION_TAG-1.nupkg"
-        FILES["config"]="python-app-$$VERSION_TAG-2.nupkg"
-        FILES["utils"]="python-app-$$VERSION_TAG-3.nupkg"
-        FILES["readme"]="python-app-$$VERSION_TAG-4.nupkg"
-
-        for key in "${!FILES[@]}"; do
-          FILE_NAME="${FILES[$key]}"
-          echo "Uploading $$FILE_NAME as file '$$key.nupkg' under package $$PACKAGE_NAME version $$VERSION_TAG"
+        for pkg in "${!PACKAGES[@]}"; do
+          FILE="${PACKAGES[$pkg]}"
+          echo "Uploading $$FILE to package '$$pkg' version $$VERSION_TAG"
 
           gcloud artifacts generic upload \
             --project="onyx-antler-459216-j6" \
             --location="us-central1" \
             --repository="generic-nupkg-repo" \
-            --package="$$PACKAGE_NAME" \
+            --package="$$pkg" \
             --version="$$VERSION_TAG" \
-            --file="$$key.nupkg" \
-            --source="$$FILE_NAME"
+            --source="$$FILE"
         done
 
 options:
