@@ -60,7 +60,6 @@ steps:
           --package="source-package" \
           --version="$$VERSION_TAG" \
           --source="python-app-$$VERSION_TAG.nupkg"
-
  # Step 4: Create startup.sh with Flask setup and app run
  - name: 'ubuntu'
    id: 'Create startup.sh'
