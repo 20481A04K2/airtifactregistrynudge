@@ -73,19 +73,17 @@ steps:
 
         echo "Uploading .nupkg files under single package 'source-package' and version $$VERSION_TAG"
 
-        # Define package name once
         PACKAGE_NAME="source-package"
 
-        # Declare file-to-upload and file-names to upload in Artifact Registry for differentiation
         declare -A FILES
-        FILES["app"]="python-app-$${VERSION_TAG}-1.nupkg"
-        FILES["config"]="python-app-$${VERSION_TAG}-2.nupkg"
-        FILES["utils"]="python-app-$${VERSION_TAG}-3.nupkg"
-        FILES["readme"]="python-app-$${VERSION_TAG}-4.nupkg"
+        FILES["app"]="python-app-$$VERSION_TAG-1.nupkg"
+        FILES["config"]="python-app-$$VERSION_TAG-2.nupkg"
+        FILES["utils"]="python-app-$$VERSION_TAG-3.nupkg"
+        FILES["readme"]="python-app-$$VERSION_TAG-4.nupkg"
 
-        for FILE_ALIAS in "${!FILES[@]}"; do
-          FILE_NAME=${FILES[$FILE_ALIAS]}
-          echo "Uploading $$FILE_NAME as file '$$FILE_ALIAS.nupkg' under package $$PACKAGE_NAME version $$VERSION_TAG"
+        for key in "${!FILES[@]}"; do
+          FILE_NAME="${FILES[$key]}"
+          echo "Uploading $$FILE_NAME as file '$$key.nupkg' under package $$PACKAGE_NAME version $$VERSION_TAG"
 
           gcloud artifacts generic upload \
             --project="onyx-antler-459216-j6" \
@@ -93,7 +91,7 @@ steps:
             --repository="generic-nupkg-repo" \
             --package="$$PACKAGE_NAME" \
             --version="$$VERSION_TAG" \
-            --file="$$FILE_ALIAS.nupkg" \
+            --file="$$key.nupkg" \
             --source="$$FILE_NAME"
         done
 
