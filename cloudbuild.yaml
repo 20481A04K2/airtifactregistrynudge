@@ -1,5 +1,5 @@
 steps:
-  # Step 0: Generate dynamic version tag
+  # Step 0: Generate version tag
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Generate Version'
     entrypoint: 'bash'
@@ -10,7 +10,7 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Package Python script as .nupkg (zip) with version tag
+  # Step 1: Package Python script
   - name: 'ubuntu'
     id: 'Package Python Script'
     entrypoint: 'bash'
@@ -23,7 +23,7 @@ steps:
         touch package/__init__.py
         zip -r python-app-$$VERSION_TAG.nupkg package
 
-  # Step 2: Create Generic Artifact Registry repo if not exist (idempotent)
+  # Step 2: Create Artifact Registry repo
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Generic Repo'
     entrypoint: 'bash'
@@ -37,7 +37,7 @@ steps:
           --location=$$LOCATION \
           --description="Generic repo for .nupkg files" || echo "Repo probably exists."
 
-  # Step 3: Upload .nupkg to Artifact Registry with version tag
+  # Step 3: Upload .nupkg
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Upload nupkg'
     entrypoint: 'bash'
@@ -50,7 +50,7 @@ steps:
         FILE="python-app-$$VERSION_TAG.nupkg"
         gcloud artifacts files upload $$FILE --repository=$$REPO_NAME --location=$$LOCATION --quiet
 
-  # Step 4: Dynamically create startup.sh with double-escaped $$ variables
+  # Step 4: Create startup.sh (escaped $$$$ inside echo)
   - name: 'ubuntu'
     id: 'Create startup.sh'
     entrypoint: 'bash'
@@ -69,16 +69,17 @@ steps:
         echo "echo \"Startup script running for version $$VERSION_TAG\"" >> $$STARTUP_SCRIPT_PATH
         echo "apt-get update -y" >> $$STARTUP_SCRIPT_PATH
         echo "apt-get install -y unzip python3 python3-pip curl jq" >> $$STARTUP_SCRIPT_PATH
-        echo "TOKEN=\$\$\$(curl -s -H \"Metadata-Flavor: Google\" \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
-        echo "curl -H \"Authorization: Bearer \$TOKEN\" \\" >> $$STARTUP_SCRIPT_PATH
+        echo "TOKEN=\$\$\$(curl -s -H \\\"Metadata-Flavor: Google\\\" \\\"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\\\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
+        echo "curl -H \\\"Authorization: Bearer \$\$\$TOKEN\\\" \\" >> $$STARTUP_SCRIPT_PATH
         echo "  -o /tmp/$$FILE_NAME \\" >> $$STARTUP_SCRIPT_PATH
-        echo "  \"$$AR_BASE_URL/$$FILE_NAME?alt=media\"" >> $$STARTUP_SCRIPT_PATH
+        echo "  \\\"$$AR_BASE_URL/$$FILE_NAME?alt=media\\\"" >> $$STARTUP_SCRIPT_PATH
+        echo "mkdir -p /opt/python-app" >> $$STARTUP_SCRIPT_PATH
         echo "unzip -o /tmp/$$FILE_NAME -d /opt/python-app" >> $$STARTUP_SCRIPT_PATH
         echo "python3 /opt/python-app/package/app.py" >> $$STARTUP_SCRIPT_PATH
 
         chmod +x $$STARTUP_SCRIPT_PATH
 
-  # Step 5: Create Instance Template with startup-script from local file (no GCS)
+  # Step 5: Create Instance Template
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Instance Template'
     entrypoint: 'bash'
@@ -96,7 +97,7 @@ steps:
           --tags=http-server,https-server \
           --metadata-from-file startup-script=$$STARTUP_SCRIPT_FILE
 
-  # Step 6: Create or update MIG with new instance template
+  # Step 6: Create or Update MIG
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create or Update MIG'
     entrypoint: 'bash'
@@ -124,7 +125,6 @@ steps:
           echo "Triggering rolling restart..."
           gcloud compute instance-groups managed rolling-action restart $$MIG_NAME \
             --zone=$$ZONE
-        fi
 
 options:
   logging: CLOUD_LOGGING_ONLY
