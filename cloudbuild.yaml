@@ -103,18 +103,20 @@ steps:
           --tags=http-server,https-server \
           --metadata-from-file startup-script=$$STARTUP_SCRIPT_FILE
 
-  # Step 6: Create or Update MIG
+  # Step 4: Create or Update MIG with proper if-fi block
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create or Update MIG'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        set -x
         source /workspace/version.env
         MIG_NAME="vamsi-mig"
         TEMPLATE_NAME="vamsi-template-$$VERSION_TAG"
-        ZONE="us-central1-a"
+        ZONE="asia-east1-b"
 
+        echo "Checking if MIG $$MIG_NAME exists..."
         if ! gcloud compute instance-groups managed describe $$MIG_NAME --zone=$$ZONE > /dev/null 2>&1; then
           echo "Creating new MIG with template $$TEMPLATE_NAME"
           gcloud compute instance-groups managed create $$MIG_NAME \
@@ -131,6 +133,7 @@ steps:
           echo "Triggering rolling restart..."
           gcloud compute instance-groups managed rolling-action restart $$MIG_NAME \
             --zone=$$ZONE
+        fi
 
 options:
   logging: CLOUD_LOGGING_ONLY
