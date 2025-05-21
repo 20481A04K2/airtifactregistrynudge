@@ -10,13 +10,14 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Package Python script (uses python:3.10-slim which has zip)
+  # Step 1: Package Python script (install zip first)
   - name: 'python:3.10-slim'
     id: 'Package Python Script'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        apt-get update && apt-get install -y zip
         source /workspace/version.env
         mkdir -p package
         echo 'print("Hello from version '$$VERSION_TAG'")' > package/app.py
