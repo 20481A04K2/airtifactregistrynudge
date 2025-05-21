@@ -10,7 +10,47 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Dynamically create startup.sh with correct escaping
+  # Step 1: Package Python script as .nupkg (zip) with version tag
+  - name: 'ubuntu'
+    id: 'Package Python Script'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        source /workspace/version.env
+        mkdir -p package
+        echo 'print("Hello from version '$$VERSION_TAG'")' > package/app.py
+        touch package/__init__.py
+        zip -r python-app-$$VERSION_TAG.nupkg package
+
+  # Step 2: Create Generic Artifact Registry repo if not exist (idempotent)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Create Generic Repo'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        REPO_NAME="generic-nupkg-repo"
+        LOCATION="us-central1"
+        gcloud artifacts repositories create $$REPO_NAME \
+          --repository-format=generic \
+          --location=$$LOCATION \
+          --description="Generic repo for .nupkg files" || echo "Repo probably exists."
+
+  # Step 3: Upload .nupkg to Artifact Registry with version tag
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Upload nupkg'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        source /workspace/version.env
+        REPO_NAME="generic-nupkg-repo"
+        LOCATION="us-central1"
+        FILE="python-app-$$VERSION_TAG.nupkg"
+        gcloud artifacts files upload $$FILE --repository=$$REPO_NAME --location=$$LOCATION --quiet
+
+  # Step 4: Generate startup script to download/unzip/run python app from AR
   - name: 'ubuntu'
     id: 'Create startup.sh'
     entrypoint: 'bash'
@@ -18,34 +58,33 @@ steps:
       - '-c'
       - |
         source /workspace/version.env
-
         REPO_NAME="generic-nupkg-repo"
         LOCATION="us-central1"
-        PROJECT_ID=$$(gcloud config get-value project)
+        BUCKET_URL="https://$$LOCATION-artifactregistry.googleapis.com/v1/projects/$$(gcloud config get-value project)/locations/$$LOCATION/repositories/$$REPO_NAME/files"
         FILE_NAME="python-app-$$VERSION_TAG.nupkg"
         STARTUP_SCRIPT_PATH="/workspace/startup-$$VERSION_TAG.sh"
 
-        DOWNLOAD_URL="https://$$LOCATION-artifactregistry.googleapis.com/v1/projects/$$PROJECT_ID/locations/$$LOCATION/repositories/$$REPO_NAME/files/$$FILE_NAME?alt=media"
-
-        cat << 'EOF' > $$STARTUP_SCRIPT_PATH
+        cat <<EOF > $$STARTUP_SCRIPT_PATH
 #!/bin/bash
-echo "Startup script for $$VERSION_TAG started..."
+echo "Starting startup script for $$VERSION_TAG..."
 
 apt-get update -y
 apt-get install -y unzip python3 python3-pip curl jq
 
-TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
+TOKEN=\$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
 
-curl -H "Authorization: Bearer $$TOKEN" -o /tmp/$$FILE_NAME "$$DOWNLOAD_URL"
+curl -H "Authorization: Bearer \$TOKEN" \\
+  -o /tmp/$$FILE_NAME \\
+  "$$BUCKET_URL/$$FILE_NAME?alt=media"
 
 unzip -o /tmp/$$FILE_NAME -d /opt/python-app
 
-python3 /opt/python-app/app.py
+python3 /opt/python-app/package/app.py
 EOF
 
         chmod +x $$STARTUP_SCRIPT_PATH
 
-  # Step 2: Upload startup.sh to GCS with version tag in filename
+  # Step 5: Upload startup script to GCS bucket
   - name: 'gcr.io/cloud-builders/gsutil'
     id: 'Upload startup.sh to GCS'
     entrypoint: 'bash'
@@ -55,7 +94,7 @@ EOF
         source /workspace/version.env
         gsutil cp /workspace/startup-$$VERSION_TAG.sh gs://vamsi-artifact-bucket/scripts/startup-$$VERSION_TAG.sh
 
-  # Step 3: Create Instance Template with startup-script-url
+  # Step 6: Create Instance Template with startup-script-url pointing to GCS script
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Instance Template'
     entrypoint: 'bash'
@@ -68,26 +107,23 @@ EOF
 
         gcloud compute instance-templates create vamsi-template-$$VERSION \
           --machine-type=e2-medium \
-          --region=asia-east1 \
           --image-family=ubuntu-2204-lts \
           --image-project=ubuntu-os-cloud \
-          --tags=http-server,https-server,allow-8080 \
+          --tags=http-server,https-server \
           --metadata=startup-script-url=$$STARTUP_SCRIPT_URL
 
-  # Step 4: Create or Update Managed Instance Group (MIG)
+  # Step 7: Create or update MIG with new instance template
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create or Update MIG'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        set -x
         source /workspace/version.env
         MIG_NAME="vamsi-mig"
         TEMPLATE_NAME="vamsi-template-$$VERSION_TAG"
-        ZONE="asia-east1-b"
+        ZONE="us-central1-a"
 
-        echo "Checking if MIG $$MIG_NAME exists..."
         if ! gcloud compute instance-groups managed describe $$MIG_NAME --zone=$$ZONE > /dev/null 2>&1; then
           echo "Creating new MIG with template $$TEMPLATE_NAME"
           gcloud compute instance-groups managed create $$MIG_NAME \
