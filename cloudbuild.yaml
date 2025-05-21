@@ -61,37 +61,38 @@ steps:
           --version="$$VERSION_TAG" \
           --source="python-app-$$VERSION_TAG.nupkg"
 
-# Step 4: Create startup.sh with Flask setup and app run
-- name: 'ubuntu'
-  id: 'Create startup.sh'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      source /workspace/version.env
-      REPO_NAME="generic-nupkg-repo"
-      LOCATION="us-central1"
-      PROJECT_ID=$$(gcloud config get-value project)
-      FILE_NAME="python-app-$$VERSION_TAG.nupkg"
-      STARTUP_SCRIPT_PATH="/workspace/startup-$$VERSION_TAG.sh"
-      AR_BASE_URL="https://$$LOCATION-artifactregistry.googleapis.com/v1/projects/$$PROJECT_ID/locations/$$LOCATION/repositories/$$REPO_NAME/files"
+ # Step 4: Create startup.sh with Flask setup and app run
+ - name: 'ubuntu'
+   id: 'Create startup.sh'
+   entrypoint: 'bash'
+   args:
+     - '-c'
+     - |
+       source /workspace/version.env
+       REPO_NAME="generic-nupkg-repo"
+       LOCATION="us-central1"
+       PROJECT_ID=$$(gcloud config get-value project)
+       FILE_NAME="python-app-$$VERSION_TAG.nupkg"
+       STARTUP_SCRIPT_PATH="/workspace/startup-$$VERSION_TAG.sh"
+       AR_BASE_URL="https://$$LOCATION-artifactregistry.googleapis.com/v1/projects/$$PROJECT_ID/locations/$$LOCATION/repositories/$$REPO_NAME/files"
 
-      echo "#!/bin/bash" > $$STARTUP_SCRIPT_PATH
-      echo "echo \"Startup script running for version $$VERSION_TAG\"" >> $$STARTUP_SCRIPT_PATH
-      echo "apt-get update -y" >> $$STARTUP_SCRIPT_PATH
-      echo "apt-get install -y unzip python3 python3-pip curl jq" >> $$STARTUP_SCRIPT_PATH
-      echo "pip3 install flask" >> $$STARTUP_SCRIPT_PATH
+       echo "#!/bin/bash" > $$STARTUP_SCRIPT_PATH
+       echo "echo \"Startup script running for version $$VERSION_TAG\"" >> $$STARTUP_SCRIPT_PATH
+       echo "apt-get update -y" >> $$STARTUP_SCRIPT_PATH
+       echo "apt-get install -y unzip python3 python3-pip curl jq" >> $$STARTUP_SCRIPT_PATH
+       echo "pip3 install flask" >> $$STARTUP_SCRIPT_PATH
 
-      echo "TOKEN=\$$(curl -s -H \\\"Metadata-Flavor: Google\\\" \\\"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\\\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
-      echo "curl -H \\\"Authorization: Bearer $$$$TOKEN\\\" \\" >> $$STARTUP_SCRIPT_PATH
-      echo "  -o /tmp/$$FILE_NAME \\" >> $$STARTUP_SCRIPT_PATH
-      echo "  \\\"$$AR_BASE_URL/$$FILE_NAME?alt=media\\\"" >> $$STARTUP_SCRIPT_PATH
+       echo "TOKEN=\$$(curl -s -H \\\"Metadata-Flavor: Google\\\" \\\"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\\\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
+       echo "curl -H \\\"Authorization: Bearer $$$$TOKEN\\\" \\" >> $$STARTUP_SCRIPT_PATH
+       echo "  -o /tmp/$$FILE_NAME \\" >> $$STARTUP_SCRIPT_PATH
+       echo "  \\\"$$AR_BASE_URL/$$FILE_NAME?alt=media\\\"" >> $$STARTUP_SCRIPT_PATH
 
-      echo "mkdir -p /opt/python-app" >> $$STARTUP_SCRIPT_PATH
-      echo "unzip -o /tmp/$$FILE_NAME -d /opt/python-app" >> $$STARTUP_SCRIPT_PATH
-      echo "nohup python3 /opt/python-app/package/app.py > /var/log/app.log 2>&1 &" >> $$STARTUP_SCRIPT_PATH
+       echo "mkdir -p /opt/python-app" >> $$STARTUP_SCRIPT_PATH
+       echo "unzip -o /tmp/$$FILE_NAME -d /opt/python-app" >> $$STARTUP_SCRIPT_PATH
+       echo "nohup python3 /opt/python-app/package/app.py > /var/log/app.log 2>&1 &" >> $$STARTUP_SCRIPT_PATH
 
-      chmod +x $$STARTUP_SCRIPT_PATH
+       chmod +x $$STARTUP_SCRIPT_PATH
+
 
 
   # Step 5: Create Instance Template with startup script
