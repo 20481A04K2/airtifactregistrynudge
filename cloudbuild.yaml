@@ -10,8 +10,8 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Package Python script
-  - name: 'ubuntu'
+  # Step 1: Package Python script (uses python:3.10-slim which has zip)
+  - name: 'python:3.10-slim'
     id: 'Package Python Script'
     entrypoint: 'bash'
     args:
