@@ -10,7 +10,7 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Package Flask App (YAML-safe version)
+  # Step 1: Package Flask App (YAML-safe version with multiple files)
   - name: 'python:3.10-slim'
     id: 'Package Flask App'
     entrypoint: 'bash'
@@ -20,17 +20,37 @@ steps:
         apt-get update && apt-get install -y zip
         source /workspace/version.env
         mkdir -p package
+
+        # app.py
         echo "from flask import Flask" > package/app.py
+        echo "import utils" >> package/app.py
         echo "app = Flask(__name__)" >> package/app.py
         echo "" >> package/app.py
         echo "@app.route('/')" >> package/app.py
         echo "def hello():" >> package/app.py
-        echo "    return 'Hello from version $${VERSION_TAG}'" >> package/app.py
+        echo "    return f'Hello from version $${VERSION_TAG} - ' + utils.greet()" >> package/app.py
         echo "" >> package/app.py
         echo "if __name__ == '__main__':" >> package/app.py
         echo "    app.run(host='0.0.0.0', port=8080)" >> package/app.py
+
+        # utils.py
+        echo "def greet():" > package/utils.py
+        echo "    return 'Greetings from utils!'" >> package/utils.py
+
+        # config.yaml
+        echo "environment: production" > package/config.yaml
+        echo "version: $${VERSION_TAG}" >> package/config.yaml
+
+        # README.md
+        echo "# Sample Flask App" > package/README.md
+        echo "This is version $${VERSION_TAG} of the app." >> package/README.md
+
+        # __init__.py
         touch package/__init__.py
+
+        # Create the .nupkg ZIP archive
         zip -r python-app-$${VERSION_TAG}.nupkg package
+
 
   # Step 2: Check/create Artifact Registry repo
   - name: 'gcr.io/cloud-builders/gcloud'
