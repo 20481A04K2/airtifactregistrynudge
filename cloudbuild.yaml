@@ -25,27 +25,21 @@ steps:
         FILE_NAME="python-app-$$VERSION_TAG.nupkg"
         STARTUP_SCRIPT_PATH="/workspace/startup-$$VERSION_TAG.sh"
 
-        # Construct Artifact Registry download URL
         DOWNLOAD_URL="https://$$LOCATION-artifactregistry.googleapis.com/v1/projects/$$PROJECT_ID/locations/$$LOCATION/repositories/$$REPO_NAME/files/$$FILE_NAME?alt=media"
 
-        cat <<EOF > $$STARTUP_SCRIPT_PATH
+        cat << 'EOF' > $$STARTUP_SCRIPT_PATH
 #!/bin/bash
 echo "Startup script for $$VERSION_TAG started..."
 
-# Install required packages
 apt-get update -y
 apt-get install -y unzip python3 python3-pip curl jq
 
-# Fetch access token from metadata server
-TOKEN=\\\$\\\$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
+TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
 
-# Download the .nupkg package from Artifact Registry
-curl -H "Authorization: Bearer \\\$\\\$TOKEN" -o /tmp/$$FILE_NAME "$$DOWNLOAD_URL"
+curl -H "Authorization: Bearer $$TOKEN" -o /tmp/$$FILE_NAME "$$DOWNLOAD_URL"
 
-# Unzip the package contents
 unzip -o /tmp/$$FILE_NAME -d /opt/python-app
 
-# Run the Python app
 python3 /opt/python-app/app.py
 EOF
 
