@@ -10,7 +10,7 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Dynamically create startup.sh (Ubuntu base)
+  # Step 1: Dynamically create startup.sh with correct escaping
   - name: 'ubuntu'
     id: 'Create startup.sh'
     entrypoint: 'bash'
@@ -25,32 +25,33 @@ steps:
         FILE_NAME="python-app-$$VERSION_TAG.nupkg"
         STARTUP_SCRIPT_PATH="/workspace/startup-$$VERSION_TAG.sh"
 
+        # Construct Artifact Registry download URL
         DOWNLOAD_URL="https://$$LOCATION-artifactregistry.googleapis.com/v1/projects/$$PROJECT_ID/locations/$$LOCATION/repositories/$$REPO_NAME/files/$$FILE_NAME?alt=media"
 
         cat <<EOF > $$STARTUP_SCRIPT_PATH
-        #!/bin/bash
-        echo "Starting startup script for $$VERSION_TAG..."
+#!/bin/bash
+echo "Startup script for $$VERSION_TAG started..."
 
-        # Install dependencies
-        apt-get update -y
-        apt-get install -y unzip python3 python3-pip curl jq
+# Install required packages
+apt-get update -y
+apt-get install -y unzip python3 python3-pip curl jq
 
-        # Get access token from metadata server
-        TOKEN=\$$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
+# Fetch access token from metadata server
+TOKEN=\\\$\\\$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
 
-        # Download .nupkg file from Artifact Registry
-        curl -H "Authorization: Bearer \$\$TOKEN" -o /tmp/$$FILE_NAME "$$DOWNLOAD_URL"
+# Download the .nupkg package from Artifact Registry
+curl -H "Authorization: Bearer \\\$\\\$TOKEN" -o /tmp/$$FILE_NAME "$$DOWNLOAD_URL"
 
-        # Unzip the package
-        unzip -o /tmp/$$FILE_NAME -d /opt/python-app
+# Unzip the package contents
+unzip -o /tmp/$$FILE_NAME -d /opt/python-app
 
-        # Run the Python app (adjust path inside .nupkg as needed)
-        python3 /opt/python-app/app.py
-        EOF
+# Run the Python app
+python3 /opt/python-app/app.py
+EOF
 
         chmod +x $$STARTUP_SCRIPT_PATH
 
-  # Step 2: Upload startup.sh to GCS with version tag
+  # Step 2: Upload startup.sh to GCS with version tag in filename
   - name: 'gcr.io/cloud-builders/gsutil'
     id: 'Upload startup.sh to GCS'
     entrypoint: 'bash'
@@ -60,7 +61,7 @@ steps:
         source /workspace/version.env
         gsutil cp /workspace/startup-$$VERSION_TAG.sh gs://vamsi-artifact-bucket/scripts/startup-$$VERSION_TAG.sh
 
-  # Step 3: Create Instance Template with startup-script-url (Ubuntu image)
+  # Step 3: Create Instance Template with startup-script-url
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Instance Template'
     entrypoint: 'bash'
@@ -88,7 +89,6 @@ steps:
       - |
         set -x
         source /workspace/version.env
-
         MIG_NAME="vamsi-mig"
         TEMPLATE_NAME="vamsi-template-$$VERSION_TAG"
         ZONE="asia-east1-b"
