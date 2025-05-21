@@ -10,9 +10,9 @@ steps:
         echo "VERSION_TAG=$$VERSION_TAG" > /workspace/version.env
         echo "Generated version: $$VERSION_TAG"
 
-  # Step 1: Package Python script (install zip first)
+  # Step 1: Package Flask app (install zip first)
   - name: 'python:3.10-slim'
-    id: 'Package Python Script'
+    id: 'Package Flask App'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -20,7 +20,17 @@ steps:
         apt-get update && apt-get install -y zip
         source /workspace/version.env
         mkdir -p package
-        echo 'print("Hello from version '$$VERSION_TAG'")' > package/app.py
+        cat > package/app.py << 'EOF'
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+    return "Hello from version $$VERSION_TAG"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
+EOF
         touch package/__init__.py
         zip -r python-app-$$VERSION_TAG.nupkg package
 
@@ -37,7 +47,6 @@ steps:
             --project=onyx-antler-459216-j6
         fi
 
-
   # Step 3: Upload .nupkg to Artifact Registry
   - name: "gcr.io/cloud-builders/gcloud"
     id: "Upload nupkg"
@@ -51,12 +60,10 @@ steps:
           --location="us-central1" \
           --repository="generic-nupkg-repo" \
           --package="source-package" \
-          --version="$$VERSION_TAG"\
-          --source="python-app-$$VERSION_TAG.nupkg" 
+          --version="$$VERSION_TAG" \
+          --source="python-app-$$VERSION_TAG.nupkg"
 
-
-
-  # Step 4: Create startup.sh with escaped $$$$ and valid YAML
+  # Step 4: Create startup.sh with Flask setup and app run
   - name: 'ubuntu'
     id: 'Create startup.sh'
     entrypoint: 'bash'
@@ -75,17 +82,18 @@ steps:
         echo "echo \"Startup script running for version $$VERSION_TAG\"" >> $$STARTUP_SCRIPT_PATH
         echo "apt-get update -y" >> $$STARTUP_SCRIPT_PATH
         echo "apt-get install -y unzip python3 python3-pip curl jq" >> $$STARTUP_SCRIPT_PATH
+        echo "pip3 install flask" >> $$STARTUP_SCRIPT_PATH
         echo "TOKEN=$$(curl -s -H \\\"Metadata-Flavor: Google\\\" \\\"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\\\" | jq -r .access_token)" >> $$STARTUP_SCRIPT_PATH
         echo "curl -H \\\"Authorization: Bearer $$TOKEN\\\" \\" >> $$STARTUP_SCRIPT_PATH
         echo "  -o /tmp/$$FILE_NAME \\" >> $$STARTUP_SCRIPT_PATH
         echo "  \\\"$$AR_BASE_URL/$$FILE_NAME?alt=media\\\"" >> $$STARTUP_SCRIPT_PATH
         echo "mkdir -p /opt/python-app" >> $$STARTUP_SCRIPT_PATH
         echo "unzip -o /tmp/$$FILE_NAME -d /opt/python-app" >> $$STARTUP_SCRIPT_PATH
-        echo "python3 /opt/python-app/package/app.py" >> $$STARTUP_SCRIPT_PATH
+        echo "nohup python3 /opt/python-app/package/app.py > /var/log/app.log 2>&1 &" >> $$STARTUP_SCRIPT_PATH
 
         chmod +x $$STARTUP_SCRIPT_PATH
 
-  # Step 5: Create Instance Template
+  # Step 5: Create Instance Template with startup script
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create Instance Template'
     entrypoint: 'bash'
@@ -103,7 +111,7 @@ steps:
           --tags=http-server,https-server \
           --metadata-from-file startup-script=$$STARTUP_SCRIPT_FILE
 
-  # Step 4: Create or Update MIG with proper if-fi block
+  # Step 6: Create or Update Managed Instance Group (MIG)
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Create or Update MIG'
     entrypoint: 'bash'
@@ -134,6 +142,7 @@ steps:
           gcloud compute instance-groups managed rolling-action restart $$MIG_NAME \
             --zone=$$ZONE
         fi
+
 
 options:
   logging: CLOUD_LOGGING_ONLY
